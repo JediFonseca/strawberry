@@ -55,8 +55,6 @@
 using std::dynamic_pointer_cast;
 using namespace Qt::Literals::StringLiterals;
 
-TagReaderClient *TagReaderClient::sInstance = nullptr;
-
 TagReaderClient::TagReaderClient(QObject *parent)
     : QObject(parent),
       original_thread_(thread()),
@@ -64,10 +62,6 @@ TagReaderClient::TagReaderClient(QObject *parent)
       processing_(false) {
 
   setObjectName(QLatin1String(QObject::metaObject()->className()));
-
-  if (!sInstance) {
-    sInstance = this;
-  }
 
 }
 
@@ -180,7 +174,7 @@ void TagReaderClient::ProcessRequest(TagReaderRequestPtr request) {
     }
   }
   else if (TagReaderReadFileRequestPtr read_file_request = dynamic_pointer_cast<TagReaderReadFileRequest>(request)) {
-    Song song;
+    Song song = read_file_request->song;
     result = ReadFileBlocking(read_file_request->filename, &song);
     if (result.error_code == TagReaderResult::ErrorCode::FileOpenError || result.error_code == TagReaderResult::ErrorCode::Unsupported) {
       result = gmereader_.ReadFile(read_file_request->filename, &song);
@@ -278,7 +272,7 @@ TagReaderResult TagReaderClient::ReadFileBlocking(const QString &filename, Song 
 
 }
 
-TagReaderReadFileReplyPtr TagReaderClient::ReadFileAsync(const QString &filename) {
+TagReaderReadFileReplyPtr TagReaderClient::ReadFileAsync(const QString &filename, const Song &song) {
 
   Q_ASSERT(QThread::currentThread() != thread());
 
@@ -287,6 +281,7 @@ TagReaderReadFileReplyPtr TagReaderClient::ReadFileAsync(const QString &filename
   TagReaderReadFileRequestPtr request = TagReaderReadFileRequest::Create(filename);
   request->reply = reply;
   request->filename = filename;
+  request->song = song;
 
   EnqueueRequest(request);
 

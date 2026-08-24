@@ -23,9 +23,7 @@
 #include <QUrl>
 #include <QUuid>
 
-#include "core/logging.h"
 #include "collectionplaylistitem.h"
-#include "tagreader/tagreaderclient.h"
 
 class SqlRow;
 
@@ -50,21 +48,6 @@ bool CollectionPlaylistItem::InitFromQuery(const SqlRow &query) {
   song_.InitFromQuery(query, true, col);
 
   return song_.is_valid();
-
-}
-
-Song CollectionPlaylistItem::Reload() {
-
-  if (!song_.url().isLocalFile()) return Song();
-
-  Song result = song_;
-  const TagReaderResult tag_result = TagReaderClient::Instance()->ReadFileBlocking(result.url().toLocalFile(), &result);
-  if (!tag_result.success()) {
-    qLog(Error) << "Could not reload file" << result.url() << tag_result.error_string();
-    return Song();
-  }
-
-  return result;
 
 }
 

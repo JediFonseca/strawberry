@@ -111,17 +111,33 @@ std::atomic<int> GstEnginePipeline::sId{1};
 QThreadPool *GstEnginePipeline::shared_state_threadpool() {
 
   // C++11 guarantees thread-safe initialization of static local variables
-  static QThreadPool pool;
+  static QThreadPool threadpool;
   static const auto init = []() {
     // Limit the number of threads to prevent resource exhaustion
     // Use 2 threads max since state changes are typically sequential per pipeline
-    pool.setMaxThreadCount(2);
+    threadpool.setMaxThreadCount(2);
     return true;
   }();
 
   Q_UNUSED(init);
 
-  return &pool;
+  return &threadpool;
+
+}
+
+QThreadPool *GstEnginePipeline::shared_pad_send_threadpool() {
+
+  // C++11 guarantees thread-safe initialization of static local variables
+  static QThreadPool threadpool;
+  static const auto init = []() {
+    // Kept separate from shared_state_threadpool(): a pad send here can block for as long as the current track takes to drain, and must never be able to starve that pool's (normally fast) state-change tasks.
+    threadpool.setMaxThreadCount(2);
+    return true;
+  }();
+
+  Q_UNUSED(init);
+
+  return &threadpool;
 
 }
 
@@ -176,6 +192,7 @@ GstEnginePipeline::GstEnginePipeline(QObject *parent)
       next_uri_set_(false),
       next_uri_need_reset_(false),
       next_uri_reset_(false),
+      next_uri_eos_manufactured_(false),
       volume_set_(false),
       volume_internal_(-1.0),
       volume_percent_(100),
@@ -244,7 +261,23 @@ GstEnginePipeline::~GstEnginePipeline() {
       }
     }
 
+    // Setting the pipeline to NULL flushes it, which releases any pad still blocked in a serialized event (e.g. a manufactured-EOS gst_pad_send_event() call from ErrorMessageReceived(), still running on a worker thread).
+    // This must happen with pipeline_ still referenced/valid but before we wait for those pad-send futures below, otherwise waitForFinished() could block forever: nothing else would ever unblock that pad.
     gst_element_set_state(pipeline_, GST_STATE_NULL);
+
+    // Now wait for any manufactured-EOS pad sends still running on a worker thread, since they act directly on audiobin_'s pad and must not race with tearing it down below.
+    {
+      QList<QFuture<gboolean>> futures_to_wait;
+      {
+        QMutexLocker locker(&mutex_pending_pad_send_events_);
+        futures_to_wait = pending_pad_send_events_;
+        pending_pad_send_events_.clear();
+      }
+
+      for (QFuture<gboolean> &future : futures_to_wait) {
+        future.waitForFinished();
+      }
+    }
 
     GstElement *audiobin = nullptr;
     g_object_get(GST_OBJECT(pipeline_), "audio-sink", &audiobin, nullptr);
@@ -1146,6 +1179,8 @@ void GstEnginePipeline::SourceSetupCallback(GstElement *playbin, GstElement *sou
 
   GstEnginePipeline *instance = reinterpret_cast<GstEnginePipeline*>(self);
 
+  qLog(Debug) << "Pipeline" << instance->id() << "source-setup, source element is" << G_OBJECT_TYPE_NAME(source);
+
   {
     QMutexLocker l(&instance->mutex_source_device_);
     if (g_object_class_find_property(G_OBJECT_GET_CLASS(source), "device") && !instance->source_device().isEmpty()) {
@@ -1165,6 +1200,11 @@ void GstEnginePipeline::SourceSetupCallback(GstElement *playbin, GstElement *sou
   if (g_object_class_find_property(G_OBJECT_GET_CLASS(source), "ssl-strict")) {
     qLog(Debug) << "Turning" << (instance->strict_ssl_enabled_.load() ? "on" : "off") << "strict SSL";
     g_object_set(source, "ssl-strict", instance->strict_ssl_enabled_.load() ? TRUE : FALSE, nullptr);
+  }
+
+  if (g_object_class_find_property(G_OBJECT_GET_CLASS(source), "automatic-redirect")) {
+    qLog(Debug) << "Enabling automatic redirect";
+    g_object_set(source, "automatic-redirect", TRUE, nullptr);
   }
 
   {
@@ -1767,13 +1807,6 @@ void GstEnginePipeline::ElementMessageReceived(GstMessage *msg) {
     g_free(detail);
     Q_EMIT Error(id(), static_cast<int>(GST_LIBRARY_ERROR), GST_CORE_ERROR_MISSING_PLUGIN, message, QString());
   }
-  else if (gst_structure_has_name(structure, "redirect")) {
-    const char *uri = gst_structure_get_string(structure, "new-location");
-
-    // Set the redirect URL.  In mmssrc redirect messages come during the initial state change to PLAYING, so callers can pick up this URL after the state change has failed.
-    QMutexLocker l(&mutex_redirect_url_);
-    redirect_url_ = uri;
-  }
 
 }
 
@@ -1797,27 +1830,34 @@ void GstEnginePipeline::ErrorMessageReceived(GstMessage *msg) {
 
   if (pipeline_active_.load() && next_uri_set_.load() && (domain == GST_CORE_ERROR || domain == GST_RESOURCE_ERROR || domain == GST_STREAM_ERROR)) {
     // A track is still playing and the next uri is not playable. We ignore the error here so it can play until the end.
-    // But there is no message send to the bus when the current track finishes, we have to add an EOS ourself.
+    // But there is no message sent to the bus when the current track finishes, we have to add an EOS ourself.
+    // gst_pad_send_event() is a serialized event: sending it to audiobin_'s entrance pad queues it behind whatever of the current track's audio is already buffered downstream of that point, so it only reaches the sink (and surfaces as a real GST_MESSAGE_EOS, handled below) once that buffered audio has actually finished playing,
+    // which is what makes the current track play out to its natural end instead of being cut short.
+    // The call itself blocks the caller on that pad's stream lock for as long as that takes.
+    // Doing this on the main thread would freeze the UI for the remainder of the track,
+    // or deadlock it outright if the sink is also stalled waiting on a state change that can only be observed on the main thread.
+    // So it is dispatched on shared_pad_send_threadpool(), a pool kept separate from shared_state_threadpool() (used by SetState() below) so a long-blocked pad send can never starve state-change requests.
+    // Repeated error messages can arrive for the same failed next-URI (e.g. from multiple internal elements), but only the first should manufacture an EOS; the guard is reset per next-URI cycle in SetNextUrl().
+    bool expected = false;
+    if (!next_uri_eos_manufactured_.compare_exchange_strong(expected, true)) {
+      return;
+    }
     qLog(Info) << "Ignoring error" << domain << code << message << debugstr << "when loading next track";
     GstPad *pad = gst_element_get_static_pad(audiobin_, "sink");
     if (pad) {
-      gst_pad_send_event(pad, gst_event_new_eos());
-      gst_object_unref(pad);
+      QFuture<gboolean> future = QtConcurrent::run(shared_pad_send_threadpool(), [pad]() {
+        const gboolean result = gst_pad_send_event(pad, gst_event_new_eos());
+        gst_object_unref(pad);
+        return result;
+      });
+      QMutexLocker locker(&mutex_pending_pad_send_events_);
+      pending_pad_send_events_.append(future);
     }
     return;
   }
 
   qLog(Error) << __FUNCTION__ << "ID:" << id() << "Domain:" << domain << "Code:" << code << "Error:" << message;
   qLog(Error) << __FUNCTION__ << "ID:" << id() << "Domain:" << domain << "Code:" << code << "Debug:" << debugstr;
-
-  {
-    QMutexLocker l(&mutex_redirect_url_);
-    if (!redirect_url_.isEmpty() && debugstr.contains("A redirect message was posted on the bus and should have been handled by the application."_L1)) {
-      // mmssrc posts a message on the bus *and* makes an error message when it wants to do a redirect.
-      // We handle the message, but now we have to ignore the error too.
-      return;
-    }
-  }
 
 #ifdef Q_OS_WIN32
   // Ignore non-error received for directsoundsink: "IDirectSoundBuffer_GetStatus The operation completed successfully"
@@ -2619,6 +2659,9 @@ void GstEnginePipeline::SetNextUrl() {
 
   bool expected = false;
   if (!next_uri_set_.compare_exchange_strong(expected, true)) return;
+
+  // Starting a new next-URI cycle: allow ErrorMessageReceived() to manufacture (at most) one more EOS if this next URI also fails.
+  next_uri_eos_manufactured_ = false;
 
   // Set the next uri. When the current song ends it will be played automatically and a STREAM_START message is send to the bus.
   // When the next uri is not playable an error message is send when the pipeline goes to PLAY (or PAUSE) state or immediately if it is currently in PLAY state.

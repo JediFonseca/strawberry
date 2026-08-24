@@ -1,6 +1,6 @@
 /*
  * Strawberry Music Player
- * Copyright 2024, Jonas Kvinge <jonas@jkvinge.net>
+ * Copyright 2026, Jonas Kvinge <jonas@jkvinge.net>
  *
  * Strawberry is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,25 +17,10 @@
  *
  */
 
-#ifndef TAGREADERREADFILEREQUEST_H
-#define TAGREADERREADFILEREQUEST_H
+#include "config.h"
 
-#include <QString>
-
-#include "includes/shared_ptr.h"
 #include "core/song.h"
-#include "tagreaderrequest.h"
 
-using std::make_shared;
+#include "playlistitemsavedata.h"
 
-class TagReaderReadFileRequest : public TagReaderRequest {
- public:
-  explicit TagReaderReadFileRequest(const QString &_filename);
-  static SharedPtr<TagReaderReadFileRequest> Create(const QString &filename) { return make_shared<TagReaderReadFileRequest>(filename); }
-
-  Song song;
-};
-
-using TagReaderReadFileRequestPtr = SharedPtr<TagReaderReadFileRequest>;
-
-#endif  // TAGREADERREADFILEREQUEST_H
+PlaylistItemSaveData::PlaylistItemSaveData() : source(Song::Source::Unknown) {}

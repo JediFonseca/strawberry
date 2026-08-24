@@ -109,7 +109,7 @@
 #include "utilities/screenutils.h"
 #include "engine/enginebase.h"
 #include "dialogs/errordialog.h"
-#include "dialogs/about.h"
+#include "dialogs/aboutdialog.h"
 #include "dialogs/console.h"
 #include "dialogs/addstreamdialog.h"
 #include "dialogs/deleteconfirmationdialog.h"
@@ -1562,7 +1562,7 @@ void MainWindow::MediaPlaying() {
   bool enable_play_pause(false);
   bool can_seek(false);
 
-  PlaylistItemPtr item(app_->player()->GetCurrentItem());
+  PlaylistItemPtr item = app_->player()->GetCurrentItem();
   if (item) {
     enable_play_pause = !(item->options() & PlaylistItem::Option::PauseDisabled);
     can_seek = !(item->options() & PlaylistItem::Option::SeekDisabled);
@@ -1863,7 +1863,7 @@ void MainWindow::Seeked(const qint64 microseconds) {
 
 void MainWindow::UpdateTrackPosition() {
 
-  PlaylistItemPtr item(app_->player()->GetCurrentItem());
+  PlaylistItemPtr item = app_->player()->GetCurrentItem();
   if (!item) return;
 
   const qint64 length = (item->EffectiveMetadata().length_nanosec() / kNsecPerSec);
@@ -2282,14 +2282,14 @@ void MainWindow::RescanSongs() {
   for (const QModelIndex &proxy_index : proxy_indexes) {
     const QModelIndex source_index = app_->playlist_manager()->current()->filter()->mapToSource(proxy_index);
     if (!source_index.isValid()) continue;
-    PlaylistItemPtr item(app_->playlist_manager()->current()->item_at(source_index.row()));
+    PlaylistItemPtr item = app_->playlist_manager()->current()->item_at(source_index.row());
     if (!item) continue;
     if (item->IsLocalCollectionItem()) {
       songs << item->EffectiveMetadata();
     }
     else if (item->EffectiveMetadata().source() == Song::Source::LocalFile) {
       QPersistentModelIndex persistent_index = QPersistentModelIndex(source_index);
-      app_->playlist_manager()->current()->ItemReload(persistent_index, false);
+      app_->playlist_manager()->current()->ReloadItem(persistent_index, item);
     }
   }
 
@@ -2308,7 +2308,7 @@ void MainWindow::EditTracks() {
   for (const QModelIndex &proxy_index : proxy_indexes) {
     const QModelIndex source_index = app_->playlist_manager()->current()->filter()->mapToSource(proxy_index);
     if (!source_index.isValid()) continue;
-    PlaylistItemPtr item(app_->playlist_manager()->current()->item_at(source_index.row()));
+    PlaylistItemPtr item = app_->playlist_manager()->current()->item_at(source_index.row());
     if (!item) continue;
     Song song = item->OriginalMetadata();
     if (song.IsEditable()) {
@@ -2334,22 +2334,33 @@ void MainWindow::EditTagDialogAccepted() {
     return;
   }
 
+  Playlist *playlist = app_->playlist_manager()->current();
+  if (!playlist) {
+    return;
+  }
+
+  QList<int> rows_to_reload;
   for (int i = 0; i < items.count(); ++i) {
-    PlaylistItemPtr item = items[i];
-    const Song &updated_song = songs[i];
-    // For stream tracks, apply the metadata directly since there's no file to reload from
+    PlaylistItemPtr item = items.at(i);
+    const Song &updated_song = songs.at(i);
+    // For stream tracks, apply the metadata directly since there's no file to reload from.
     if (updated_song.is_stream_service()) {
-      item->SetOriginalMetadata(updated_song);
+      playlist->UpdateItemMetadata(item, updated_song, false);
+      continue;
     }
-    else {
-      item->Reload();
+    // The item's row may have shifted since the dialog was opened, and reloading below needs a row rather than just the item.
+    const int row = playlist->row_of(item);
+    if (row != -1) {
+      rows_to_reload << row;
     }
   }
 
-  // FIXME: This is really lame but we don't know what rows have changed.
-  ui_->playlist->view()->update();
+  // Reload the just-written files from disk (to pick up any normalization the tag writer applied) and refresh only the rows that changed, instead of repainting the whole view.
+  if (!rows_to_reload.isEmpty()) {
+    playlist->ReloadItems(rows_to_reload);
+  }
 
-  app_->playlist_manager()->current()->ScheduleSaveAsync();
+  playlist->ScheduleSave();
 
 }
 
@@ -2784,7 +2795,7 @@ void MainWindow::AddFilesToTranscoder() {
   for (const QModelIndex &proxy_index : proxy_indexes) {
     const QModelIndex source_index = app_->playlist_manager()->current()->filter()->mapToSource(proxy_index);
     if (!source_index.isValid()) continue;
-    PlaylistItemPtr item(app_->playlist_manager()->current()->item_at(source_index.row()));
+    PlaylistItemPtr item = app_->playlist_manager()->current()->item_at(source_index.row());
     if (!item) continue;
     Song song = item->OriginalMetadata();
     if (!song.is_valid() || !song.url().isLocalFile()) continue;
@@ -3224,7 +3235,7 @@ void MainWindow::AutoCompleteTags() {
   for (const QModelIndex &proxy_index : proxy_indexes) {
     const QModelIndex source_index = app_->playlist_manager()->current()->filter()->mapToSource(proxy_index);
     if (!source_index.isValid()) continue;
-    PlaylistItemPtr item(app_->playlist_manager()->current()->item_at(source_index.row()));
+    PlaylistItemPtr item = app_->playlist_manager()->current()->item_at(source_index.row());
     if (!item) continue;
     Song song = item->OriginalMetadata();
     if (song.IsEditable()) {
@@ -3246,17 +3257,22 @@ void MainWindow::AutoCompleteTags() {
 
 void MainWindow::AutoCompleteTagsAccepted() {
 
-  for (int i = 0; i < autocomplete_tag_items_.count(); ++i) {
-    PlaylistItemPtr item = autocomplete_tag_items_.at(i);
-    const Song reloaded_song = item->Reload();
-    if (reloaded_song.is_valid()) {
-      item->SetOriginalMetadata(reloaded_song);
+  Playlist *playlist = app_->playlist_manager()->current();
+  if (playlist) {
+    QList<int> rows_to_reload;
+    for (int i = 0; i < autocomplete_tag_items_.count(); i++) {
+      const PlaylistItemPtr item = autocomplete_tag_items_.at(i);
+      const int row = playlist->row_of(item);
+      if (row != -1) {
+        rows_to_reload << row;
+      }
+    }
+    if (!rows_to_reload.isEmpty()) {
+      playlist->ReloadItems(rows_to_reload);
     }
   }
-  autocomplete_tag_items_.clear();
 
-  // This is really lame but we don't know what rows have changed
-  ui_->playlist->view()->update();
+  autocomplete_tag_items_.clear();
 
 }
 
@@ -3521,7 +3537,7 @@ void MainWindow::FetchStreamingMetadata() {
   for (const QModelIndex &proxy_index : proxy_indexes) {
     const QModelIndex source_index = app_->playlist_manager()->current()->filter()->mapToSource(proxy_index);
     if (!source_index.isValid()) continue;
-    PlaylistItemPtr item(app_->playlist_manager()->current()->item_at(source_index.row()));
+    PlaylistItemPtr item = app_->playlist_manager()->current()->item_at(source_index.row());
     if (!item) continue;
 
     const Song &song = item->EffectiveMetadata();
@@ -3602,8 +3618,7 @@ void MainWindow::ProcessMetadataQueue() {
             if (fetched_song.year() > 0) updated_song.set_year(fetched_song.year());
             if (fetched_song.length_nanosec() > 0) updated_song.set_length_nanosec(fetched_song.length_nanosec());
             if (fetched_song.art_automatic().isValid()) updated_song.set_art_automatic(fetched_song.art_automatic());
-            playlist_item->SetOriginalMetadata(updated_song);
-            app_->playlist_manager()->current()->ItemReload(metadata_queue_entry.persistent_index, false);
+            app_->playlist_manager()->current()->UpdateItemMetadata(metadata_queue_entry.persistent_index.row(), playlist_item, updated_song, false);
           }
         }
         request->deleteLater();
@@ -3652,8 +3667,7 @@ void MainWindow::ProcessMetadataQueue() {
             if (fetched_song.year() > 0) updated_song.set_year(fetched_song.year());
             if (fetched_song.length_nanosec() > 0) updated_song.set_length_nanosec(fetched_song.length_nanosec());
             if (fetched_song.art_automatic().isValid()) updated_song.set_art_automatic(fetched_song.art_automatic());
-            playlist_item->SetOriginalMetadata(updated_song);
-            app_->playlist_manager()->current()->ItemReload(metadata_queue_entry.persistent_index, false);
+            app_->playlist_manager()->current()->UpdateItemMetadata(metadata_queue_entry.persistent_index.row(), playlist_item, updated_song, false);
           }
         }
         request->deleteLater();

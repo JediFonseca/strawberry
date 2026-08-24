@@ -613,6 +613,7 @@ set(SOURCES
   src/playlist/playlistfilter.cpp
   src/playlist/playlistheader.cpp
   src/playlist/playlistitem.cpp
+  src/playlist/playlistitemsavedata.cpp
   src/playlist/songplaylistitem.cpp
   src/playlist/streamplaylistitem.cpp
   src/playlist/playlistitemmimedata.cpp
@@ -731,7 +732,7 @@ set(SOURCES
   src/settings/notificationssettingspage.cpp
   src/settings/transcodersettingspage.cpp
 
-  src/dialogs/about.cpp
+  src/dialogs/aboutdialog.cpp
   src/dialogs/console.cpp
   src/dialogs/errordialog.cpp
   src/dialogs/edittagdialog.cpp
@@ -1029,7 +1030,7 @@ set(HEADERS
   src/settings/notificationssettingspage.h
   src/settings/transcodersettingspage.h
 
-  src/dialogs/about.h
+  src/dialogs/aboutdialog.h
   src/dialogs/errordialog.h
   src/dialogs/console.h
   src/dialogs/edittagdialog.h
@@ -1186,7 +1187,7 @@ set(UI
   src/equalizer/equalizer.ui
   src/equalizer/equalizerslider.ui
 
-  src/dialogs/about.ui
+  src/dialogs/aboutdialog.ui
   src/dialogs/errordialog.ui
   src/dialogs/console.ui
   src/dialogs/edittagdialog.ui

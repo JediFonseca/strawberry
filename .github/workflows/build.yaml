@@ -10,8 +10,8 @@ jobs:
 
   build-opensuse:
     name: Build openSUSE
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master') ||
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos' && github.ref_name != 'nsi') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos' && github.head_ref != 'nsi') ||
         (github.event_name == 'release')
     runs-on: ubuntu-latest
     strategy:
@@ -128,8 +128,8 @@ jobs:
 
   build-fedora:
     name: Build Fedora
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master') ||
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos' && github.ref_name != 'nsi') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos' && github.head_ref != 'nsi') ||
         (github.event_name == 'release')
     runs-on: ubuntu-latest
     strategy:
@@ -329,14 +329,14 @@ jobs:
 
   build-mageia:
     name: Build Mageia
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master') ||
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos' && github.ref_name != 'nsi') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos' && github.head_ref != 'nsi') ||
         (github.event_name == 'release')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        mageia_version: [ '9' ]
+        mageia_version: [ '9', '10' ]
     container:
       image: mageia:${{matrix.mageia_version}}
     steps:
@@ -433,8 +433,8 @@ jobs:
 
   build-debian:
     name: Build Debian
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master') ||
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos' && github.ref_name != 'nsi') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos' && github.head_ref != 'nsi') ||
         (github.event_name == 'release')
     runs-on: ubuntu-latest
     strategy:
@@ -527,14 +527,14 @@ jobs:
 
   build-ubuntu:
     name: Build Ubuntu
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master') ||
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos' && github.ref_name != 'nsi') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos' && github.head_ref != 'nsi') ||
         (github.event_name == 'release')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        ubuntu_version: [ 'noble', 'questing', 'resolute' ]
+        ubuntu_version: [ 'noble', 'resolute' ]
     container:
       image: ubuntu:${{matrix.ubuntu_version}}
     steps:
@@ -631,7 +631,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ubuntu_version: [ 'noble', 'questing', 'resolute' ]
+        ubuntu_version: [ 'noble', 'resolute' ]
     container:
       image: ubuntu:${{matrix.ubuntu_version}}
     steps:
@@ -719,10 +719,156 @@ jobs:
         run: dput ppa:jonaski/strawberry ../*_source.changes
 
 
+  build-appimage:
+    name: Build AppImage
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos' && github.ref_name != 'nsi') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos' && github.head_ref != 'nsi') ||
+        (github.event_name == 'release')
+    runs-on: ubuntu-latest
+    container:
+      image: opensuse/tumbleweed
+    steps:
+      - name: Add Packman repository
+        run: zypper -n addrepo -f https://ftp.gwdg.de/pub/linux/misc/packman/suse/openSUSE_Tumbleweed/ packman
+      - name: Add AppImage gnutls/glib-networking repository
+        run: zypper -n addrepo -f -p 90 https://download.opensuse.org/repositories/home:/jonaski:/appimage/openSUSE_Tumbleweed/ home-jonaski-appimage
+      - name: Refresh repositories
+        run: zypper -n --gpg-auto-import-keys ref
+      - name: Upgrade packages
+        run: zypper -n --gpg-auto-import-keys dup
+      - name: Install packages
+        run: >
+            zypper -n --gpg-auto-import-keys in --allow-downgrade --allow-vendor-change --force-resolution
+            lsb-release
+            rpm-build
+            git
+            tar
+            patchelf
+            squashfs
+            curl
+            jq
+            rsync
+            make
+            cmake
+            gcc
+            gcc-c++
+            openssh-clients
+            glibc-devel
+            libboost_headers-devel
+            boost-devel
+            glib2-devel
+            glib2-tools
+            alsa-devel
+            libnotify-devel
+            sqlite3-devel
+            libpulse-devel
+            gstreamer-devel
+            gstreamer-plugins-base-devel
+            gstreamer-plugins-base
+            gstreamer-plugins-good
+            gstreamer-plugins-bad
+            gstreamer-plugins-bad-codecs
+            gstreamer-plugins-ugly
+            gstreamer-plugins-libav
+            gstreamer-plugins-rs
+            taglib-devel
+            libicu-devel
+            libcdio-devel
+            libgpod-devel
+            libmtp-devel
+            libchromaprint-devel
+            fftw3-devel
+            libebur128-devel
+            desktop-file-utils
+            update-desktop-files
+            appstream-glib
+            hicolor-icon-theme
+            glib-networking
+            qt6-core-devel
+            qt6-gui-devel
+            qt6-gui-private-devel
+            qt6-widgets-devel
+            qt6-concurrent-devel
+            qt6-network-devel
+            qt6-sql-devel
+            qt6-dbus-devel
+            qt6-test-devel
+            qt6-base-common-devel
+            qt6-sql-sqlite
+            qt6-imageformats
+            qt6-linguist-devel
+            gtest
+            gmock
+            sparsehash-devel
+            kdsingleapplication-qt6-devel
+            AppStream
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Add safe git directory
+        run: git config --global --add safe.directory ${GITHUB_WORKSPACE}
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_WERROR=ON
+      - name: Build
+        working-directory: build
+        run: make -j$(nproc)
+      - name: Install
+        working-directory: build
+        run: make install DESTDIR="${GITHUB_WORKSPACE}/AppDir"
+      - name: Download appimagetools
+        run: |
+          api_url="https://api.github.com/repos/jonaski/appimagetools/releases/latest"
+          deploy_url=$(curl -s "${api_url}" | jq -r '.assets[] | select(.name | test("^appimagedeploy-.*-Linux-x86_64\\.AppImage$")) | .browser_download_url')
+          builder_url=$(curl -s "${api_url}" | jq -r '.assets[] | select(.name | test("^appimagebuilder-.*-Linux-x86_64\\.AppImage$")) | .browser_download_url')
+          curl -fL -o appimagedeploy.AppImage "${deploy_url}"
+          curl -fL -o appimagebuilder.AppImage "${builder_url}"
+          chmod +x appimagedeploy.AppImage appimagebuilder.AppImage
+      - name: Deploy
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: >
+            ./appimagedeploy.AppImage
+            AppDir/usr/share/applications/org.strawberrymusicplayer.strawberry.desktop
+            --qt-sql-plugins=sqlite
+            --gstreamer-plugins=list
+            --gstreamer-plugin-list=adaptivedemux2,aiff,alsa,apetag,app,asf,asfmux,audioconvert,audiofx,audioparsers,audioresample,autodetect,bs2b,cdio,coreelements,dash,dsd,equalizer,faac,faad,fdkaac,flac,gme,hls,icydemux,id3demux,isomp4,lame,libav,matroska,mpegtsdemux,mpg123,musepack,ogg,openmpt,opus,pbtypes,playback,pulseaudio,replaygain,rtp,rtpmanager,rtsp,soup,spectrum,speex,spotify,taglib,typefindfunctions,udp,volume,vorbis,wavenc,wavpack,wavparse,xingmux
+      - name: Package AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: ./appimagebuilder.AppImage AppDir
+
+      - name: Set Upload path
+        id: set-upload-path
+        if: github.repository == 'strawberrymusicplayer/strawberry' && (github.event_name == 'release' || (github.event_name == 'push' && github.event.pull_request.head.repo.fork == false && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/ci' || github.ref == 'refs/heads/appimage')))
+        run: |
+          if [ "${{github.event_name}}" = "release" ]; then
+            echo "upload_path=${{secrets.DOWNLOADS_PATH}}/stable_releases/linux/appimage" >> $GITHUB_OUTPUT
+          else
+            echo "upload_path=${{secrets.DOWNLOADS_PATH}}/development_releases/linux/appimage" >> $GITHUB_OUTPUT
+          fi
+
+      - name: SSH Setup
+        if: steps.set-upload-path.outputs.upload_path != ''
+        uses: shimataro/ssh-key-action@v2
+        with:
+          known_hosts: ${{secrets.SSH_KNOWN_HOSTS}}
+          key: ${{ secrets.SSH_KEY }}
+
+      - name: Create server path
+        if: steps.set-upload-path.outputs.upload_path != ''
+        run: ssh -p ${{secrets.SSH_PORT}} -o StrictHostKeyChecking=no ${{secrets.SSH_USER}}@${{secrets.SSH_HOST}} mkdir -p ${{steps.set-upload-path.outputs.upload_path}}
+
+      - name: rsync
+        if: steps.set-upload-path.outputs.upload_path != ''
+        run: rsync -e "ssh -p ${{secrets.SSH_PORT}} -o StrictHostKeyChecking=no" -var Strawberry-*.AppImage ${{secrets.SSH_USER}}@${{secrets.SSH_HOST}}:${{steps.set-upload-path.outputs.upload_path}}/
+
+
   build-freebsd:
     name: Build FreeBSD
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master')
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos' && github.ref_name != 'nsi') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos' && github.head_ref != 'nsi')
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
@@ -738,23 +884,23 @@ jobs:
         df -h
     - name: Build FreeBSD
       id: build-freebsd
-      uses: vmactions/freebsd-vm@v1.5.0
+      uses: vmactions/freebsd-vm@v1.5.3
       with:
         usesh: true
         mem: 8192
-        prepare: pkg install -y git cmake pkgconf boost-libs alsa-lib glib qt6-base qt6-tools sqlite gstreamer1 gstreamer1-plugins chromaprint libebur128 taglib libcdio libmtp gdk-pixbuf2 libgpod fftw3 icu kdsingleapplication googletest pulseaudio sparsehash
+        prepare: pkg install -y git cmake pkgconf boost-libs alsa-lib glib qt6-base qt6-tools sqlite gstreamer1 gstreamer1-plugins chromaprint libebur128 taglib libcdio libmtp gdk-pixbuf2 fftw3 icu kdsingleapplication googletest pulseaudio sparsehash
         run: |
           set -e
           git config --global --add safe.directory ${GITHUB_WORKSPACE}
           cmake -E make_directory build
-          cmake -S . -B build -DCMAKE_BUILD_TYPE="Debug"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE="Debug" -DENABLE_GPOD=OFF
           cmake --build build --config Debug --parallel 4
 
 
   build-openbsd:
     name: Build OpenBSD
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master')
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos' && github.ref_name != 'nsi') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos' && github.head_ref != 'nsi')
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
@@ -764,7 +910,7 @@ jobs:
         submodules: recursive
     - name: Build OpenBSD
       id: build-openbsd
-      uses: vmactions/openbsd-vm@v1.4.4
+      uses: vmactions/openbsd-vm@v1.4.6
       with:
         usesh: true
         mem: 4096
@@ -780,8 +926,8 @@ jobs:
 
   build-macos-public:
     name: Build macOS Public
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master') ||
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'nsi') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'nsi') ||
         (github.event_name == 'release')
 
     strategy:
@@ -868,7 +1014,6 @@ jobs:
           -DUSE_BUNDLE=ON
           -DICU_ROOT="${{env.prefix_path}}"
           -DAPPLE_DEVELOPER_ID=$(test '${{github.repository}}' = 'strawberrymusicplayer/strawberry' && test '${{github.event.pull_request.base.repo.full_name}}' = '${{github.event.pull_request.head.repo.full_name}}' && echo "383J84DVB6" || echo "")
-          -DARCH="${{env.arch}}"
           -DENABLE_SPOTIFY=$(test -f "${{env.prefix_path}}/lib/gstreamer-1.0/libgstspotify.dylib" && echo "ON" || echo "OFF")
           -DENABLE_SPARKLE=ON
           -DENABLE_QTSPARKLE=OFF
@@ -881,27 +1026,8 @@ jobs:
         run: make install
 
       - name: Deploy
-        env:
-          GIO_EXTRA_MODULES: ${{env.prefix_path}}/lib/gio/modules
-          GST_PLUGIN_SCANNER: ${{env.prefix_path}}/libexec/gstreamer-1.0/gst-plugin-scanner
-          GST_PLUGIN_PATH: ${{env.prefix_path}}/lib/gstreamer-1.0
-          LIBSOUP_LIBRARY_PATH: ${{env.prefix_path}}/lib/libsoup-3.0.0.dylib
         working-directory: build
         run: make deploy
-
-      - name: Manually Codesign
-        if: github.repository == 'strawberrymusicplayer/strawberry' && github.event.pull_request.head.repo.fork == false && matrix.runner == 'macos-15-intel'
-        working-directory: build
-        run: codesign -s 383J84DVB6 -f strawberry.app/Contents/Frameworks/{libpcre2-8.0.dylib,libpcre2-16.0.dylib,libpng16.16.dylib,libfreetype.6.dylib,libzstd.1.dylib,libbrotlicommon.1.dylib,libbrotlienc.1.dylib,libbrotlidec.1.dylib,libsoup-3.0.0.dylib,libnghttp2.14.dylib,libpsl.5.dylib} strawberry.app/Contents/Frameworks/png.framework/png strawberry.app
-
-      - name: Manually Codesign
-        if: github.repository == 'strawberrymusicplayer/strawberry' && github.event.pull_request.head.repo.fork == false && matrix.runner == 'macos-15'
-        working-directory: build
-        run: codesign -s 383J84DVB6 -f strawberry.app/Contents/Frameworks/png.framework/png strawberry.app
-
-      - name: Deploy check
-        working-directory: build
-        run: make deploycheck
 
       - name: Verify code-signing
         if: github.repository == 'strawberrymusicplayer/strawberry' && github.event.pull_request.head.repo.fork == false
@@ -911,6 +1037,20 @@ jobs:
       - name: Create DMG
         working-directory: build
         run: make dmg
+
+      - name: Store notarization credentials
+        if: github.repository == 'strawberrymusicplayer/strawberry' && (github.event_name == 'release' || (github.event_name == 'push' && github.event.pull_request.head.repo.fork == false && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/ci' || github.ref == 'refs/heads/macos')))
+        run: xcrun notarytool store-credentials "strawberry-notarization" --apple-id "${{secrets.APPLE_NOTARIZATION_APPLE_ID}}" --team-id "383J84DVB6" --password "${{secrets.APPLE_NOTARIZATION_PASSWORD}}"
+
+      - name: Notarize DMG
+        if: github.repository == 'strawberrymusicplayer/strawberry' && (github.event_name == 'release' || (github.event_name == 'push' && github.event.pull_request.head.repo.fork == false && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/ci' || github.ref == 'refs/heads/macos')))
+        working-directory: build
+        run: xcrun notarytool submit *.dmg --keychain-profile "strawberry-notarization" --wait
+
+      - name: Staple notarization ticket
+        if: github.repository == 'strawberrymusicplayer/strawberry' && (github.event_name == 'release' || (github.event_name == 'push' && github.event.pull_request.head.repo.fork == false && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/ci' || github.ref == 'refs/heads/macos')))
+        working-directory: build
+        run: xcrun stapler staple *.dmg
 
       - name: SSH Setup
         if: github.repository == 'strawberrymusicplayer/strawberry' && (github.event_name == 'release' || (github.event_name == 'push' && github.event.pull_request.head.repo.fork == false && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/ci' || github.ref == 'refs/heads/macos')))
@@ -1009,7 +1149,6 @@ jobs:
           -DUSE_BUNDLE=ON
           -DICU_ROOT="${{env.prefix_path}}"
           -DAPPLE_DEVELOPER_ID="383J84DVB6"
-          -DARCH="${{env.arch}}"
           -DENABLE_SPOTIFY=$(test -f "${{env.prefix_path}}/lib/gstreamer-1.0/libgstspotify.dylib" && echo "ON" || echo "OFF")
           -DENABLE_SPARKLE=ON
           -DENABLE_QTSPARKLE=OFF
@@ -1022,21 +1161,8 @@ jobs:
         run: make install
 
       - name: Deploy
-        env:
-          GIO_EXTRA_MODULES: ${{env.prefix_path}}/lib/gio/modules
-          GST_PLUGIN_SCANNER: ${{env.prefix_path}}/libexec/gstreamer-1.0/gst-plugin-scanner
-          GST_PLUGIN_PATH: ${{env.prefix_path}}/lib/gstreamer-1.0
-          LIBSOUP_LIBRARY_PATH: ${{env.prefix_path}}/lib/libsoup-3.0.0.dylib
         working-directory: build
         run: make deploy
-
-      - name: Manually Codesign
-        working-directory: build
-        run: codesign -s 383J84DVB6 -f strawberry.app/Contents/Frameworks/png.framework/png strawberry.app
-
-      - name: Deploy check
-        working-directory: build
-        run: make deploycheck
 
       - name: Verify code-signing
         working-directory: build
@@ -1045,6 +1171,14 @@ jobs:
       - name: Create DMG
         working-directory: build
         run: make dmg
+
+      - name: Notarize DMG
+        working-directory: build
+        run: xcrun notarytool submit *.dmg --keychain-profile "strawberry-notarization" --wait
+
+      - name: Staple notarization ticket
+        working-directory: build
+        run: xcrun stapler staple *.dmg
 
       - name: Set Upload path
         id: set-upload-path
@@ -1064,8 +1198,8 @@ jobs:
 
   build-windows-mingw:
     name: Build Windows MinGW
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master') ||
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos') ||
         (github.event_name == 'release')
     runs-on: ubuntu-latest
     strategy:
@@ -1093,8 +1227,8 @@ jobs:
       - name: Create Build Environment
         run: cmake -E make_directory build
 
-      - name: Link MXE directory
-        run: ln -s /strawberry-mxe ~/mxe-shared
+      - name: Add MXE directory to PATH
+        run: echo "/strawberry-mxe/usr/bin" >> $GITHUB_PATH
 
       - name: Run CMake
         env:
@@ -1103,11 +1237,17 @@ jobs:
           cmake
           -S .
           -B build
-          -DCMAKE_TOOLCHAIN_FILE="../cmake/Toolchain-${{matrix.arch}}-w64-mingw32-shared.cmake"
+          -DCMAKE_SYSTEM_NAME="Windows"
           -DCMAKE_BUILD_TYPE="${{env.cmake_buildtype}}"
+          -DCMAKE_FIND_ROOT_PATH=/strawberry-mxe/usr/${{matrix.arch}}-w64-mingw32.shared
+          -DCMAKE_C_COMPILER="${{matrix.arch}}-w64-mingw32.shared-gcc"
+          -DCMAKE_CXX_COMPILER="${{matrix.arch}}-w64-mingw32.shared-g++"
+          -DCMAKE_RC_COMPILER="${{matrix.arch}}-w64-mingw32.shared-windres"
+          -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
+          -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
+          -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
           -DCMAKE_PREFIX_PATH="/strawberry-mxe/usr/${{matrix.arch}}-w64-mingw32.shared/qt6"
           -DBUILD_WERROR=ON
-          -DARCH="${{matrix.arch}}"
           -DENABLE_WIN32_CONSOLE=$(test "${{matrix.buildtype}}" = "debug" && echo "ON" || echo "OFF")
           -DENABLE_GIO=OFF
           -DENABLE_AUDIOCD=OFF
@@ -1255,8 +1395,8 @@ jobs:
 
   build-windows-msvc:
     name: Build Windows MSVC
-    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master') ||
-        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master') ||
+    if: (github.event_name == 'push' && github.repository == 'strawberrymusicplayer/strawberry' && github.ref_name != 'l10n_master' && github.ref_name != 'macos') ||
+        (github.event_name == 'pull_request' && github.head_ref != 'l10n_master' && github.head_ref != 'macos') ||
         (github.event_name == 'release')
     strategy:
       fail-fast: false
@@ -1430,7 +1570,6 @@ jobs:
           -G "Ninja"
           -DCMAKE_BUILD_TYPE="${{env.cmake_buildtype}}"
           -DCMAKE_PREFIX_PATH="${{env.prefix_path_forwardslash}}/lib/cmake"
-          -DARCH="${{matrix.arch}}"
           -DENABLE_WIN32_CONSOLE=${{env.enable_win32_console}}
           -DPKG_CONFIG_EXECUTABLE="${{env.prefix_path_forwardslash}}/bin/pkg-config.exe"
           -DICU_ROOT="${{env.prefix_path_forwardslash}}"

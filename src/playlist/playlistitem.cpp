@@ -23,8 +23,6 @@
 
 #include <memory>
 
-#include <QtConcurrentRun>
-#include <QFuture>
 #include <QUuid>
 #include <QColor>
 
@@ -32,6 +30,7 @@
 #include "core/song.h"
 
 #include "playlistitem.h"
+#include "playlistitemsavedata.h"
 #include "songplaylistitem.h"
 #include "collection/collectionplaylistitem.h"
 #include "streaming/streamserviceplaylistitem.h"
@@ -40,7 +39,7 @@
 using std::make_shared;
 using namespace Qt::Literals::StringLiterals;
 
-PlaylistItem::PlaylistItem(const Song::Source source, const QUuid &uuid, const bool signal) : source_(source), uuid_(uuid.isNull() ? QUuid::createUuid() : uuid), uuid_generated_(uuid.isNull()), signal_(signal), should_skip_(false) {}
+PlaylistItem::PlaylistItem(const Song::Source source, const QUuid &uuid, const bool signal) : source_(source), uuid_(uuid.isNull() ? QUuid::createUuid() : uuid), uuid_generated_(uuid.isNull()), signal_(signal), should_skip_(false), save_generation_(0) {}
 
 PlaylistItem::~PlaylistItem() = default;
 
@@ -118,22 +117,16 @@ void PlaylistItem::ClearStreamMetadata() {
   stream_song_ = Song();
 }
 
-void PlaylistItem::BindToQuery(SqlQuery *query) const {
+PlaylistItemSaveData PlaylistItem::CreateSaveData() const {
 
-  query->BindValue(u":type"_s, static_cast<int>(source_));
-  query->BindValue(u":uuid"_s, uuid_.toString(QUuid::WithoutBraces));
-  query->BindValue(u":collection_id"_s, DatabaseValue(DatabaseColumn::CollectionId));
+  PlaylistItemSaveData save_data;
+  save_data.source = source_;
+  save_data.uuid = uuid_;
+  save_data.collection_id = DatabaseValue(DatabaseColumn::CollectionId);
+  save_data.song = DatabaseSongMetadata();
 
-  DatabaseSongMetadata().BindToQuery(query);
+  return save_data;
 
-}
-
-static Song ReloadPlaylistItem(PlaylistItemPtr item) {
-  return item->Reload();
-}
-
-QFuture<Song> PlaylistItem::BackgroundReload() {
-  return QtConcurrent::run(ReloadPlaylistItem, shared_from_this());
 }
 
 void PlaylistItem::SetBackgroundColor(short priority, const QColor &color) {

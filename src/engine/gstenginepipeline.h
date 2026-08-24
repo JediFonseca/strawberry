@@ -143,9 +143,6 @@ class GstEnginePipeline : public QObject {
 
   bool exclusive_mode() const { return exclusive_mode_; }
 
-  QByteArray redirect_url() const { return redirect_url_; }
-  QMutex *mutex_redirect_url() { return &mutex_redirect_url_; }
-
   QString source_device() const { return source_device_; }
 
  Q_SIGNALS:
@@ -227,6 +224,10 @@ class GstEnginePipeline : public QObject {
 
   // Shared thread pool for all pipeline state changes to prevent thread/FD exhaustion
   static QThreadPool *shared_state_threadpool();
+
+  // Separate shared thread pool for manufactured-EOS pad sends (see ErrorMessageReceived()).
+  // These can block for as long as the current track takes to finish draining, so they must not share shared_state_threadpool() with gst_element_set_state() calls, which are expected to complete quickly and whose timely completion drives playback control (pause/stop/seek); sharing would let a long-blocked pad send starve state changes.
+  static QThreadPool *shared_pad_send_threadpool();
 
   bool playbin3_support_;
   bool volume_full_range_support_;
@@ -330,10 +331,6 @@ class GstEnginePipeline : public QObject {
   // Set temporarily when switching out the decode bin, so metadata doesn't get sent while the Player still thinks it's playing the last song
   std::atomic<bool> ignore_tags_;
 
-  // When the gstreamer source requests a redirect we store the URL here and callers can pick it up after the state change to PLAYING fails.
-  mutable QMutex mutex_redirect_url_;
-  QByteArray redirect_url_;
-
   // When we need to specify the device to use as source (for CD device)
   QString source_device_;
   QMutex mutex_source_device_;
@@ -360,6 +357,9 @@ class GstEnginePipeline : public QObject {
   std::atomic<bool> next_uri_set_;
   std::atomic<bool> next_uri_need_reset_;
   std::atomic<bool> next_uri_reset_;
+
+  // Guards ErrorMessageReceived()'s manufactured-EOS path: reset to false each time a new next-URI is set (SetNextUrl()), and claimed with a single compare_exchange so repeated error messages about the same failed next-URI (e.g. from multiple internal elements) submit at most one manufactured EOS per next-URI cycle.
+  std::atomic<bool> next_uri_eos_manufactured_;
 
   // volume_set_, volume_internal_ and volume_percent_ are read independently in many places, but updates that mutate two or more together must hold mutex_volume_.
   mutable QMutex mutex_volume_;
@@ -414,6 +414,12 @@ class GstEnginePipeline : public QObject {
   // Doubles as the source of truth for "a synchronous state change is in flight" and lets the destructor wait for them before unreffing the pipeline.
   QList<QFuture<GstStateChangeReturn>> pending_state_changes_;
   mutable QMutex mutex_pending_state_changes_;
+
+  // Running gst_pad_send_event() calls manufacturing an EOS for the "ignore error" gapless path in ErrorMessageReceived().
+  // gst_pad_send_event() blocks on the pad's stream lock until buffers already queued ahead of it (the remainder of the still-playing current track) have drained, so it is run off the main thread to avoid freezing (or deadlocking) the UI while that drains.
+  // Tracked here so the destructor can wait for it before unreffing the pipeline, exactly like pending_state_changes_.
+  QList<QFuture<gboolean>> pending_pad_send_events_;
+  mutable QMutex mutex_pending_pad_send_events_;
 };
 
 using GstEnginePipelinePtr = QSharedPointer<GstEnginePipeline>;

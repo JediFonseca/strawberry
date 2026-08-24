@@ -35,6 +35,7 @@
 #include "core/song.h"
 #include "core/sqlrow.h"
 #include "playlistitem.h"
+#include "playlistitemsavedata.h"
 #include "smartplaylists/playlistgenerator.h"
 
 class QThread;
@@ -73,21 +74,25 @@ class PlaylistBackend : public QObject {
   PlaylistList GetAllFavoritePlaylists();
   PlaylistBackend::Playlist GetPlaylist(const int id);
 
-  PlaylistItemPtrList GetPlaylistItems(const int playlist);
-  SongList GetPlaylistSongs(const int playlist);
+  PlaylistItemPtrList GetPlaylistItems(const int playlist_id);
+  SongList GetPlaylistSongs(const int playlist_id);
 
   void SetPlaylistOrder(const QList<int> &ids);
   void SetPlaylistUiPath(const int id, const QString &path);
 
   int CreatePlaylist(const QString &name, const QString &special_type);
-  void SavePlaylistAsync(const int playlist, const PlaylistItemPtrList &items, const int last_played, PlaylistGeneratorPtr dynamic);
+  void SavePlaylistAsync(const int playlist_id, const PlaylistItemSaveDataList &items, const int last_played, PlaylistGeneratorPtr dynamic);
+  void SavePlaylistItemsAsync(const int playlist_id, const PlaylistItemSaveDataList &items);
+  void SavePlaylistLastPlayedAsync(const int playlist_id, const int last_played);
   void RenamePlaylist(const int id, const QString &new_name);
   void FavoritePlaylist(const int id, bool is_favorite);
   void RemovePlaylist(const int id);
 
  public Q_SLOTS:
   void Exit();
-  void SavePlaylist(const int playlist, const PlaylistItemPtrList &items, const int last_played, PlaylistGeneratorPtr dynamic);
+  void SavePlaylist(const int playlist_id, const PlaylistItemSaveDataList &items, const int last_played, PlaylistGeneratorPtr dynamic);
+  void SavePlaylistItems(const int playlist_id, const PlaylistItemSaveDataList &items);
+  void SavePlaylistLastPlayed(const int playlist_id, const int last_played);
 
  Q_SIGNALS:
   void ExitFinished();
@@ -99,8 +104,9 @@ class PlaylistBackend : public QObject {
   };
 
   static QString PlaylistItemsQuery();
-  Song NewSongFromQuery(const SqlRow &row, SharedPtr<NewSongFromQueryState> state);
   PlaylistItemPtr NewPlaylistItemFromQuery(const SqlRow &row, SharedPtr<NewSongFromQueryState> state);
+  Song NewSongFromQuery(const SqlRow &row, SharedPtr<NewSongFromQueryState> state);
+  Song ReloadPlaylistItem(PlaylistItemPtr item) const;
   PlaylistItemPtr RestoreCueData(PlaylistItemPtr item, SharedPtr<NewSongFromQueryState> state);
 
   enum GetPlaylistsFlags {
